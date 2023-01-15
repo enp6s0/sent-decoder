@@ -1,0 +1,291 @@
+#
+# SAE J2716 (SENT) decoder
+# Main protocol decoder class
+#
+import sigrokdecode as srd
+from .crc4 import *
+
+class Decoder(srd.Decoder):
+    api_version = 3
+    id = 'sae_j2716_sent'
+    name = 'SAE J2716'
+    longname = 'Single Edge Nibble Transmission'
+    desc = 'One-wire automotive sensor bus'
+    license = 'mit'
+    inputs = ['logic']
+    outputs = ['j2716']
+    channels = (
+        {'id': 'sent', 'name': 'Data Line', 'desc': 'SENT data line'},
+    )
+    optional_channels = ()
+    options = (
+        {'id': 'data_nibbles_count', 'desc': 'Number of data nibbles', 'default': 6},
+        {'id': 'tick_time', 'desc': 'Tick time (us)', 'default': 3.0},
+        {'id': 'use_spc', 'desc': 'SPC (Short PWM Code)', 'default': 'No', 'values': ('Yes', 'No')},
+        {'id': 'crc_method', 'desc': 'CRC method', 'default': 'Default', 'values': ('Default', 'Legacy', 'Infineon')},
+        {'id': 'data_output_format', 'desc': 'Data output format', 'default': 'Hexadecimal', 'values': ('Hexadecimal', 'Decimal', 'Binary')},
+    )
+    annotations = (
+        ('unknown', 'Unknown'),
+        ('calibration', 'Calibration pulse'),
+        ('status', 'Status nibble'),
+        ('data', 'Data nibble'),
+        ('crc', 'CRC nibble'),
+        ('spc-trigger', 'SPC trigger pulse'),
+        ('spc-end', 'SPC end pulse'),
+        ('packet', 'SENT packet'),
+        ('invalid-packet', 'Invalid SENT packet'),
+        ('debug-generic', 'Generic debug message'),
+    )
+    annotation_rows = (
+        ('data', 'Data', (2,3,4)),
+        ('pulse', 'Pulses', (1,5,6)),
+        ('warnings', 'Warnings', (0,)),
+        ('packets', 'Packets', (7,8)),
+        ('debug', 'Debug', (9,)),
+    )
+
+    def __init__(self, **kwargs):
+        self.reset()
+
+    def reset(self):
+        # SENT packet holder, to hold pulses that makes up
+        # a SENT packet for analysis
+        self.packetHolder = []
+
+    def metadata(self, key, value):
+        if key == srd.SRD_CONF_SAMPLERATE:
+            self.samplerate = value
+
+    def start(self):
+        # Register output annotations
+        self.out_ann = self.register(srd.OUTPUT_ANN)
+
+        # Number of data nibbles
+        self.dataNibblesCount = int(self.options['data_nibbles_count'])
+        assert self.dataNibblesCount >= 1, 'Data nibbles count must be positive'
+
+        # SENT tick time
+        self.tickTime = float(self.options['tick_time'])
+        assert self.tickTime >= 1, 'Tick time must be positive and at least 1uS'
+
+        # Use SPC?
+        self.spc = bool(self.options['use_spc'] == 'Yes')
+
+        # Protocol name (SENT alone or SENT/SPC)
+        self.protoname = 'SENT' if not self.spc else 'SENT/SPC'
+
+        # Data output format (hexadecimal, binary, or decimal?)
+        self.dataOutFormat = str(self.options['data_output_format']).lower()
+
+        # CRC method
+        self.crcMethod = str(self.options['crc_method']).lower()
+
+        # Debug mode?
+        # Currently, this is an internal-only variable used during
+        # development for verbose outputs and stuff. As this protocol
+        # decoder is still mostly a WIP, I'm leaving this in for now
+        self.debug = False
+
+    def validCRC(self, decoded):
+        '''
+        Find out whether the packet has a valid CRC or not. Takes
+        in a list of decoded values, with CRC as the last item
+        '''
+        if type(decoded) != list: return False, -1, -1
+        if len(decoded) <= 2: return False, -2, -2
+
+        data = decoded[1:-1] # skip status nibble
+        crc = decoded[-1]
+
+        # Find expected checksum (depending on mode)
+        if(self.crcMethod == 'default'):
+            expectedCRC = crc4(data)
+        elif(self.crcMethod == 'legacy'):
+            expectedCRC = crc4(data, legacy = True)
+        elif(self.crcMethod == 'infineon'):
+            # Infineon method seems to also consider the status
+            # nibble for some reason (see: TLE4998 user manual)
+            expectedCRC = crc4_infineon(decoded[:-1])
+
+        return (crc == expectedCRC), self.formatData(expectedCRC), self.formatData(crc)
+
+    def formatData(self, data):
+        '''
+        Function to format data (for display/output purposes) as a string
+        of a certain type, defined by the data output format setting
+        '''
+        if(self.dataOutFormat == 'decimal'):
+            return f'{data}'
+        elif(self.dataOutFormat == 'hexadecimal'):
+            return '0x' + f'{data:#X}'[2:]
+        elif(self.dataOutFormat == 'binary'):
+            return f'{data:#b}'[2:]
+        else:
+            return '?'
+
+    def analyzePacket(self, pulses):
+        '''
+        This subroutine analyzes complete SENT frames
+        '''
+        firstSample = pulses[0][0] # first falling edge sample number of first pulse
+        lastSample = pulses[-1][2] # last falling edge sample number of last pulse
+
+        # Total number of pulses in here
+        pulseCount = len(pulses)
+
+        # Expected number of pulses: # of data nibbles + status + crc + calibration
+        #                            (+ 1 if SPC - first pulse isn't actually a nibble)
+        expectedPulseCount = self.dataNibblesCount + 3
+        if(self.spc):
+            expectedPulseCount += 1
+
+        # Check for pulse count validity - if not, return and end this now
+        if(pulseCount != expectedPulseCount):
+            self.put(firstSample, lastSample, self.out_ann, [7, [f'Malformed {self.protoname} packet ({pulseCount} pulses, expecting {expectedPulseCount})']])
+            return
+
+        # Set per-tick time and frame status to invalid for now
+        tickTime = -1
+        frameValid = False
+
+        # Container for all decoded pulses
+        decoded = []
+
+        # Quick stuffed function to decode nibbles
+        def decodeNibble(ticks):
+            if(ticks >= 12 and ticks <= 27):
+                actualValue = ticks - 12
+                decoded.append(actualValue)
+                return self.formatData(actualValue)
+            else:
+                return '?'
+
+        # For each pulse, process it...
+        for pulseNum, pulse in enumerate(pulses):
+            fall, rise, end, what = pulse
+
+            # If SPC, first pulse should be the SPC trigger pulse
+            # todo: parse this (SPC has multiple modes)
+            if(pulseNum == 0 and self.spc):
+                self.put(fall, end, self.out_ann, [5, ['SPC trigger']])
+                continue
+
+            # Now, if SPC, pulse number is going to be -1, as we don't
+            # count the sync...
+            if(self.spc):
+                pulseNum -= 1
+
+            # What is the nibble size?
+            nibbleSize = int(end - fall)
+
+            # If we have already encountered a tick time, we can calculate
+            # number of ticks for this nibble, specifically
+            pulseTicks = -1
+            if(tickTime > 0):
+                pulseTicks = round(nibbleSize / tickTime)
+
+            # BEGIN actual handling
+            if(pulseNum == 0):
+                # Calibration/sync pulse (should be 56 ticks)
+                tickTime = (end - fall) / 56
+                self.put(fall, end, self.out_ann, [1, [f'Calibration (tick: {round(tickTime, 4)} samples)']])
+            elif(pulseNum == 1):
+                # Status nibble
+                data = decodeNibble(pulseTicks)
+                self.put(fall, end, self.out_ann, [2, [f'Status: {data}', f'{data}']])
+            elif(pulseNum >= 2 and pulseNum < 2 + self.dataNibblesCount):
+                # Data nibble
+                data = decodeNibble(pulseTicks)
+                self.put(fall, end, self.out_ann, [3, [f'Data: {data}', f'{data}']])
+            elif(pulseNum == 2 + self.dataNibblesCount):
+                # CRC
+                data = decodeNibble(pulseTicks)
+                self.put(fall, end, self.out_ann, [4, [f'CRC: {data}', f'{data}']])
+
+                # Calculate CRC over the data list, it should be valid...
+                frameValid, expectedCRC, actualCRC = self.validCRC(decoded)
+            else:
+                # Unknown?
+                self.put(fall, end, self.out_ann, [0, ['Unknown']])
+
+        if(frameValid):
+            self.put(firstSample, lastSample, self.out_ann, [7, [f'{self.protoname} frame of length {pulseCount}']])
+        else:
+            self.put(firstSample, lastSample, self.out_ann, [8, [f'Invalid {self.protoname} frame of length {pulseCount} (CRC error: expected {expectedCRC}, got {actualCRC})']])
+
+        # Debug
+        if(self.debug):
+            # Helps with CRC debugging
+            self.put(firstSample, lastSample, self.out_ann, [9, [f'{decoded[1:-1]} ({decoded[-1]})']])
+
+    def analyzePulse(self, pulse):
+        '''
+        This subroutine does the analyzing of pulses, given raw data that decode()
+        has given us. It'll try to combine multiple SENT pulses into a single
+        SENT frame, which will then be sent up to another analyzer to try and
+        make sense of the whole packet (frame)
+        '''
+        fall, rise, end, what = pulse
+
+        # What is this thing we got? A pulse?
+        if(what == 'pulse'):
+            self.packetHolder.append(pulse)
+
+            # For debugging
+            # self.put(fall, rise, self.out_ann, [0, ['Fall Rise']])
+            # self.put(fall, end, self.out_ann, [1, ['Pulse']])
+
+        elif(what == 'break'):
+            # Here we got a break, should close any dangling
+            # SENT packet as 'incomplete' and move on.
+            # FYI - break pulses are not sent up to the frame analyzer
+            self.analyzePacket(self.packetHolder)
+            self.packetHolder = []
+
+    def decode(self):
+
+        # Sample rate is needed so we can translate sample
+        # numbers into uS, which is a defined value for SENT
+        if not self.samplerate:
+            raise SamplerateError('Cannot decode without sample rate')
+
+        # Calculate maximum pulse width in samples (anything above this will be ignored)
+        # this is a hardcoded value, and as SENT maximum is ~56 ticks, it should work
+        # with some margin to spare
+        maxPulseWidthTicks = 100 
+        self.maxPulseWidthSamples = int(((10 ** 6) * (maxPulseWidthTicks * self.tickTime)) / self.samplerate)
+
+        # Find first falling edge
+        pins = self.wait({0: 'f'})
+        fall = self.samplenum
+
+        while True:
+
+            # There should be a rising edge here...
+            pins = self.wait({0: 'r'})
+            rise = self.samplenum
+
+            # Keep finding falling edges
+            pins = self.wait({0: 'f'})
+            end = self.samplenum
+
+            # At this point, we have the rise-fall-rise pattern
+            # which is indicative of a pulse. We should now check
+            # if its length does not exceed the maximum pulse width,
+            # and if so, pass this pulse along to the pulse analyzer 
+            # subroutine to try and make sense of it
+            if(end - fall <= self.maxPulseWidthSamples):
+                self.analyzePulse((fall, rise, end, 'pulse'))
+            else:
+                # Indicative of a break, we should let the analyzer
+                # know as well, so it can 'terminate'
+                self.analyzePulse((-1, -1, -1, 'break'))
+
+            # FYI: this currently ignores the SPC end pulse, as it is the
+            # 'head' of that super long pause pulse. For our use-case, it's fine
+            # but if this is to be turned into a full blown SENT analyzer, that
+            # might be needed...
+
+            # Move on by setting falling edge sample to next falling edge sample
+            fall = end
