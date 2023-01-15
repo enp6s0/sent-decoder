@@ -152,7 +152,7 @@ class Decoder(srd.Decoder):
         tickTime = -1
         frameValid = False
 
-        # Container for all decoded pulses
+        # Container for all data-carrying pulses
         decoded = []
 
         # Quick stuffed function to decode nibbles
