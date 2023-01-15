@@ -1,6 +1,8 @@
 # SAE J2716 (SENT) decoder for Sigrok
 A feature-*in*complete [SAE J2716](https://www.sae.org/standards/content/j2716_201001/) (SENT / Single Edge Nibble Transmission) decoder for [Sigrok](https://sigrok.org/wiki/Main_Page), with support for SPC (Short PWM Code).
 
+![Example image of the decoder in action](/decoder.png?raw=true "SENT decoder with SPC support")
+
 Created as part of my vehicle-hacking project since I can't seem to find good, open-source decoders that could decode SENT signals that also includes SPC pulses.
 
 Note that this project is considered a work-in-progress, and the code is not tested against different types of SENT captures just yet, so it may or may not work for you - use with caution!
