@@ -14,8 +14,8 @@ Pull requests are welcome for everything from bugfixes to additional features :)
 * Python object exports to enable stacking of higher level protocol analyzers on top of this thing
 * Actually decode SPC pulses, right now the decoder just skips over it
 * SENT pause pulse handling (don't have the traces/devices that does this to test yet)
-* Handling of end pulses (falling edge - rising edge pair), right now as it's not *that* important it isn't handled at all (but having it would be nice for a complete analyzer)
 * A more robust method of separating SENT frames rather than just time interval...
+* Comprehensive testing of decoder against different SENT traces (especially those without SPC)
 
 ### Installing me
 On Ubuntu Linux: place (or symlink to) the entire decoder directory in `/usr/share/libsigrokdecode/decoders/`.
