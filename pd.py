@@ -22,7 +22,7 @@ class Decoder(srd.Decoder):
         {'id': 'data_nibbles_count', 'desc': 'Number of data nibbles', 'default': 6},
         {'id': 'tick_time', 'desc': 'Tick time (us)', 'default': 3.0},
         {'id': 'use_spc', 'desc': 'SPC (Short PWM Code)', 'default': 'No', 'values': ('Yes', 'No')},
-        {'id': 'crc_method', 'desc': 'CRC method', 'default': 'Default', 'values': ('Default', 'Legacy', 'Infineon')},
+        {'id': 'crc_method', 'desc': 'CRC method', 'default': 'J2716 Recommended', 'values': ('J2716 Recommended', 'J2716 Legacy', 'Infineon')},
         {'id': 'data_output_format', 'desc': 'Data output format', 'default': 'Hexadecimal', 'values': ('Hexadecimal', 'Decimal', 'Binary')},
     )
     annotations = (
@@ -99,9 +99,9 @@ class Decoder(srd.Decoder):
         crc = decoded[-1]
 
         # Find expected checksum (depending on mode)
-        if(self.crcMethod == 'default'):
+        if(self.crcMethod == 'j2716 recommended'):
             expectedCRC = crc4(data)
-        elif(self.crcMethod == 'legacy'):
+        elif(self.crcMethod == 'j2716 legacy'):
             expectedCRC = crc4(data, legacy = True)
         elif(self.crcMethod == 'infineon'):
             # Infineon method seems to also consider the status
