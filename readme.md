@@ -13,7 +13,7 @@ Pull requests are welcome for everything from bugfixes to additional features :)
 The decoder implement several CRC calculation methods:
 
 * J2716 Recommended: recommended method (with zero padding) per SAE J2716 (APR2016) - CRC over data nibbles only
-* J2716 Recommended: legacy method (no zero padding) per SAE J2716 (APR2016) - CRC over data nibbles only
+* J2716 Legacy: legacy method (no zero padding) per SAE J2716 (APR2016) - CRC over data nibbles only
 * Infineon: method per Infineon TLE4998 user manual - CRC over data *and* status nibbles
 
 ### TODO
