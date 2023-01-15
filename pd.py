@@ -129,10 +129,13 @@ class Decoder(srd.Decoder):
         This subroutine analyzes complete SENT frames
         '''
         firstSample = pulses[0][0] # first falling edge sample number of first pulse
-        lastSample = pulses[-1][2] # last falling edge sample number of last pulse
+        lastSample = pulses[-1][1] # rising edge sample number of last pulse (end/pause)
 
         # Total number of pulses in here
         pulseCount = len(pulses)
+
+        # Ignore end/gap pulses
+        pulseCount = pulseCount - 1
 
         # Expected number of pulses: # of data nibbles + status + crc + calibration
         #                            (+ 1 if SPC - first pulse isn't actually a nibble)
@@ -170,6 +173,18 @@ class Decoder(srd.Decoder):
             if(pulseNum == 0 and self.spc):
                 self.put(fall, end, self.out_ann, [5, ['SPC trigger']])
                 continue
+
+            # If this is the last pulse, it's probably either a
+            # SPC end pulse, or a pause period between nibbles
+            if(pulseNum == len(pulses) - 1):
+                if(self.spc):
+                    # Note: SPC end pulse is only util rise!
+                    self.put(fall, rise, self.out_ann, [6, ['SPC end']])
+                    continue
+                else:
+                    # A pause pulse maybe? I don't have the traces
+                    # to try handling this yet, so it's a TODO
+                    continue
 
             # Now, if SPC, pulse number is going to be -1, as we don't
             # count the sync...
@@ -228,18 +243,12 @@ class Decoder(srd.Decoder):
         '''
         fall, rise, end, what = pulse
 
-        # What is this thing we got? A pulse?
-        if(what == 'pulse'):
-            self.packetHolder.append(pulse)
+        # Append pulse to packet holder
+        self.packetHolder.append(pulse)
 
-            # For debugging
-            # self.put(fall, rise, self.out_ann, [0, ['Fall Rise']])
-            # self.put(fall, end, self.out_ann, [1, ['Pulse']])
-
-        elif(what == 'break'):
-            # Here we got a break, should close any dangling
-            # SENT packet as 'incomplete' and move on.
-            # FYI - break pulses are not sent up to the frame analyzer
+        # If we get a break, we should close any dangling SENT packet as incomplete,
+        # and then move on...
+        if(what == 'break'):
             self.analyzePacket(self.packetHolder)
             self.packetHolder = []
 
@@ -280,12 +289,7 @@ class Decoder(srd.Decoder):
             else:
                 # Indicative of a break, we should let the analyzer
                 # know as well, so it can 'terminate'
-                self.analyzePulse((-1, -1, -1, 'break'))
-
-            # FYI: this currently ignores the SPC end pulse, as it is the
-            # 'head' of that super long pause pulse. For our use-case, it's fine
-            # but if this is to be turned into a full blown SENT analyzer, that
-            # might be needed...
+                self.analyzePulse((fall, rise, end, 'break'))
 
             # Move on by setting falling edge sample to next falling edge sample
             fall = end
