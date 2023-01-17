@@ -120,7 +120,7 @@ class Decoder(srd.Decoder):
         elif(self.dataOutFormat == 'hexadecimal'):
             return '0x' + f'{data:#X}'[2:]
         elif(self.dataOutFormat == 'binary'):
-            return f'{data:#b}'[2:]
+            return str(f'{data:#b}'[2:]).rjust(4, '0')
         else:
             return '?'
 
