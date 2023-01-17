@@ -37,13 +37,11 @@ def crc4(data, legacy = False):
 
     # Calculate checksum
     for d in data:
-        tmpCS = d + checksum * 16
-        checksum = crcTable[tmpCS]
+        checksum = crcTable[d + checksum * 16]
 
     # If not legacy CRC (i.e., if the 'recommended' CRC method is to be used), add extra '0' value
     if(not legacy):
-        tmpCS = checksum * 16
-        checksum = crcTable[tmpCS]
+        checksum = crcTable[checksum * 16]
 
     return checksum
 
@@ -59,8 +57,7 @@ def crc4_infineon(data):
     crcTable = [0, 13, 7, 10, 14, 3, 9, 4, 1, 12, 6, 11, 15, 2, 8, 5]
     checksum = 5
     for d in data:
-        checksum = checksum ^ d
-        checksum = crcTable[checksum]
+        checksum = crcTable[checksum ^ d]
 
     return checksum
 
