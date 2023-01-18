@@ -14,6 +14,7 @@ class Decoder(srd.Decoder):
     license = 'mit'
     inputs = ['logic']
     outputs = ['j2716']
+    tags = ['automotive']
     channels = (
         {'id': 'sent', 'name': 'Data Line', 'desc': 'SENT data line'},
     )
@@ -60,6 +61,8 @@ class Decoder(srd.Decoder):
     def start(self):
         # Register output annotations
         self.out_ann = self.register(srd.OUTPUT_ANN)
+        self.out_python = self.register(srd.OUTPUT_PYTHON)
+        self.out_binary = self.register(srd.OUTPUT_BINARY)
 
         # Number of data nibbles
         self.dataNibblesCount = int(self.options['data_nibbles_count'])
@@ -137,6 +140,10 @@ class Decoder(srd.Decoder):
         # Ignore end/gap pulses
         pulseCount = pulseCount - 1
 
+        # List of ALL stuff to export (not just data carrying nibbles) so we can do
+        # annotations and Python exports
+        export = []
+
         # Expected number of pulses: # of data nibbles + status + crc + calibration
         #                            (+ 1 if SPC - first pulse isn't actually a nibble)
         expectedPulseCount = self.dataNibblesCount + 3
@@ -171,6 +178,14 @@ class Decoder(srd.Decoder):
             # If SPC, first pulse should be the SPC trigger pulse
             # todo: parse this (SPC has multiple modes)
             if(pulseNum == 0 and self.spc):
+                export.append({
+                    'type' : 'spc_trigger',
+                    'samples' : {
+                        'fall' : fall,
+                        'rise' : rise,
+                        'end' : end
+                    }
+                })
                 self.put(fall, end, self.out_ann, [5, ['SPC trigger']])
                 continue
 
@@ -179,6 +194,14 @@ class Decoder(srd.Decoder):
             if(pulseNum == len(pulses) - 1):
                 if(self.spc):
                     # Note: SPC end pulse is only util rise!
+                    export.append({
+                        'type' : 'spc_end',
+                        'samples' : {
+                            'fall' : fall,
+                            'rise' : rise,
+                            'end' : end
+                        }
+                    })
                     self.put(fall, rise, self.out_ann, [6, ['SPC end']])
                     continue
                 else:
@@ -204,18 +227,56 @@ class Decoder(srd.Decoder):
             if(pulseNum == 0):
                 # Calibration/sync pulse (should be 56 ticks)
                 tickTime = (end - fall) / 56
+
+                export.append({
+                    'type' : 'calibration',
+                    'samples' : {
+                        'fall' : fall,
+                        'rise' : rise,
+                        'end' : end
+                    },
+                    'tick' : tickTime
+                })
+
                 self.put(fall, end, self.out_ann, [1, [f'Calibration (tick: {round(tickTime, 4)} samples)']])
             elif(pulseNum == 1):
                 # Status nibble
                 data = decodeNibble(pulseTicks)
+                export.append({
+                    'type' : 'status',
+                    'samples' : {
+                        'fall' : fall,
+                        'rise' : rise,
+                        'end' : end
+                    },
+                    'data' : data
+                })
                 self.put(fall, end, self.out_ann, [2, [f'Status: {data}', f'{data}']])
             elif(pulseNum >= 2 and pulseNum < 2 + self.dataNibblesCount):
                 # Data nibble
                 data = decodeNibble(pulseTicks)
+                export.append({
+                    'type' : 'data',
+                    'samples' : {
+                        'fall' : fall,
+                        'rise' : rise,
+                        'end' : end
+                    },
+                    'data' : data
+                })
                 self.put(fall, end, self.out_ann, [3, [f'Data: {data}', f'{data}']])
             elif(pulseNum == 2 + self.dataNibblesCount):
                 # CRC
                 data = decodeNibble(pulseTicks)
+                export.append({
+                    'type' : 'crc',
+                    'samples' : {
+                        'fall' : fall,
+                        'rise' : rise,
+                        'end' : end
+                    },
+                    'data' : data
+                })
                 self.put(fall, end, self.out_ann, [4, [f'CRC: {data}', f'{data}']])
 
                 # Calculate CRC over the data list, it should be valid...
@@ -233,6 +294,9 @@ class Decoder(srd.Decoder):
         if(self.debug):
             # Helps with CRC debugging
             self.put(firstSample, lastSample, self.out_ann, [9, [f'{decoded[1:-1]} ({decoded[-1]})']])
+
+        # Export to Python
+        self.put(firstSample, lastSample, self.out_python, {'type' : 'packet', 'data' : export, 'samples' : {'begin' : firstSample, 'end' : lastSample}, 'crc' : {'valid' : frameValid, 'actual' : actualCRC, 'expected' : expectedCRC}})
 
     def analyzePulse(self, pulse):
         '''
