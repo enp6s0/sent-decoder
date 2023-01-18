@@ -119,11 +119,11 @@ class Decoder(srd.Decoder):
         of a certain type, defined by the data output format setting
         '''
         if(self.dataOutFormat == 'decimal'):
-            return f'{data}'
+            return str(data)
         elif(self.dataOutFormat == 'hexadecimal'):
-            return '0x' + f'{data:#X}'[2:]
+            return '0x{:#X}'.format(data)[2:]
         elif(self.dataOutFormat == 'binary'):
-            return str(f'{data:#b}'[2:]).rjust(4, '0')
+            return str('{:#b}'.format(data)[2:]).rjust(4, '0')
         else:
             return '?'
 
@@ -152,7 +152,7 @@ class Decoder(srd.Decoder):
 
         # Check for pulse count validity - if not, return and end this now
         if(pulseCount != expectedPulseCount):
-            self.put(firstSample, lastSample, self.out_ann, [7, [f'Malformed {self.protoname} packet ({pulseCount} pulses, expecting {expectedPulseCount})']])
+            self.put(firstSample, lastSample, self.out_ann, [7, ['Malformed ' + str(self.protoname) + ' packet (' + str(pulseCount) + ' pulses, expecting ' + str(expectedPulseCount) + ')']])
             return
 
         # Set per-tick time and frame status to invalid for now
@@ -238,7 +238,7 @@ class Decoder(srd.Decoder):
                     'tick' : tickTime
                 })
 
-                self.put(fall, end, self.out_ann, [1, [f'Calibration (tick: {round(tickTime, 4)} samples)']])
+                self.put(fall, end, self.out_ann, [1, ['Calibration (tick: ' + str(round(tickTime, 4)) + ' samples)']])
             elif(pulseNum == 1):
                 # Status nibble
                 data = decodeNibble(pulseTicks)
@@ -251,7 +251,7 @@ class Decoder(srd.Decoder):
                     },
                     'data' : data
                 })
-                self.put(fall, end, self.out_ann, [2, [f'Status: {data}', f'{data}']])
+                self.put(fall, end, self.out_ann, [2, ['Status: ' + str(data), str(data)]])
             elif(pulseNum >= 2 and pulseNum < 2 + self.dataNibblesCount):
                 # Data nibble
                 data = decodeNibble(pulseTicks)
@@ -264,7 +264,7 @@ class Decoder(srd.Decoder):
                     },
                     'data' : data
                 })
-                self.put(fall, end, self.out_ann, [3, [f'Data: {data}', f'{data}']])
+                self.put(fall, end, self.out_ann, [3, ['Data: ' + str(data), str(data)]])
             elif(pulseNum == 2 + self.dataNibblesCount):
                 # CRC
                 data = decodeNibble(pulseTicks)
@@ -277,7 +277,7 @@ class Decoder(srd.Decoder):
                     },
                     'data' : data
                 })
-                self.put(fall, end, self.out_ann, [4, [f'CRC: {data}', f'{data}']])
+                self.put(fall, end, self.out_ann, [4, ['CRC: ' + str(data), str(data)]])
 
                 # Calculate CRC over the data list, it should be valid...
                 frameValid, expectedCRC, actualCRC = self.validCRC(decoded)
@@ -286,14 +286,9 @@ class Decoder(srd.Decoder):
                 self.put(fall, end, self.out_ann, [0, ['Unknown']])
 
         if(frameValid):
-            self.put(firstSample, lastSample, self.out_ann, [7, [f'{self.protoname} frame of length {pulseCount}']])
+            self.put(firstSample, lastSample, self.out_ann, [7, [str(self.protoname) + ' frame of length ' + str(pulseCount)]])
         else:
-            self.put(firstSample, lastSample, self.out_ann, [8, [f'Invalid {self.protoname} frame of length {pulseCount} (CRC error: expected {expectedCRC}, got {actualCRC})']])
-
-        # Debug
-        if(self.debug):
-            # Helps with CRC debugging
-            self.put(firstSample, lastSample, self.out_ann, [9, [f'{decoded[1:-1]} ({decoded[-1]})']])
+            self.put(firstSample, lastSample, self.out_ann, [8, ['Invalid ' + str(self.protoname) + ' frame of length ' + str(pulseCount) + ' (CRC error: expected ' + str(expectedCRC) + ', got ' + str(actualCRC) + ')']])
 
         # Export to Python
         self.put(firstSample, lastSample, self.out_python, {'type' : 'packet', 'data' : export, 'samples' : {'begin' : firstSample, 'end' : lastSample}, 'crc' : {'valid' : frameValid, 'actual' : actualCRC, 'expected' : expectedCRC}})

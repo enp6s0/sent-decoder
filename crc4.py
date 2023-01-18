@@ -67,10 +67,10 @@ def crc4_test(input, expected, legacy = False):
     testName = 'CRC4 test' if not legacy else 'CRC4 test (legacy)'
 
     if(crc == expected):
-        print(f'{testName}: passed')
+        print(testName + ' : passed')
         return True
     else:
-        print(f'{testName}: FAILED (input {input}, got {crc}, expecting {expected})')
+        print(testName + ' : FAILED') # (input {input}, got {crc}, expecting {expected})
         return False
 
 # If file is executed directly, run tests
