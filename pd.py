@@ -291,7 +291,18 @@ class Decoder(srd.Decoder):
             self.put(firstSample, lastSample, self.out_ann, [8, ['Invalid ' + str(self.protoname) + ' frame of length ' + str(pulseCount) + ' (CRC error: expected ' + str(expectedCRC) + ', got ' + str(actualCRC) + ')']])
 
         # Export to Python
-        self.put(firstSample, lastSample, self.out_python, {'type' : 'packet', 'data' : export, 'samples' : {'begin' : firstSample, 'end' : lastSample}, 'crc' : {'valid' : frameValid, 'actual' : actualCRC, 'expected' : expectedCRC}})
+        self.put(firstSample, lastSample, self.out_python, {
+            'type' : 'packet', 
+            'data' : export, 
+            'samples' : {'begin' : firstSample, 'end' : lastSample}, 
+            'crc' : {
+                'valid' : frameValid, 
+                'actual' : actualCRC, 
+                'expected' : expectedCRC, 
+                'method' : self.crcMethod
+            },
+            'format' : self.dataOutFormat,
+        })
 
     def analyzePulse(self, pulse):
         '''
