@@ -167,9 +167,9 @@ class Decoder(srd.Decoder):
             if(ticks >= 12 and ticks <= 27):
                 actualValue = ticks - 12
                 decoded.append(actualValue)
-                return self.formatData(actualValue)
+                return self.formatData(actualValue), actualValue
             else:
-                return '?'
+                return '?', 0
 
         # For each pulse, process it...
         for pulseNum, pulse in enumerate(pulses):
@@ -241,7 +241,7 @@ class Decoder(srd.Decoder):
                 self.put(fall, end, self.out_ann, [1, ['Calibration (tick: ' + str(round(tickTime, 4)) + ' samples)']])
             elif(pulseNum == 1):
                 # Status nibble
-                data = decodeNibble(pulseTicks)
+                data, rawdata = decodeNibble(pulseTicks)
                 export.append({
                     'type' : 'status',
                     'samples' : {
@@ -249,12 +249,13 @@ class Decoder(srd.Decoder):
                         'rise' : rise,
                         'end' : end
                     },
-                    'data' : data
+                    'data' : data,
+                    'raw' : rawdata
                 })
                 self.put(fall, end, self.out_ann, [2, ['Status: ' + str(data), str(data)]])
             elif(pulseNum >= 2 and pulseNum < 2 + self.dataNibblesCount):
                 # Data nibble
-                data = decodeNibble(pulseTicks)
+                data, rawdata = decodeNibble(pulseTicks)
                 export.append({
                     'type' : 'data',
                     'samples' : {
@@ -262,12 +263,13 @@ class Decoder(srd.Decoder):
                         'rise' : rise,
                         'end' : end
                     },
-                    'data' : data
+                    'data' : data,
+                    'raw' : rawdata
                 })
                 self.put(fall, end, self.out_ann, [3, ['Data: ' + str(data), str(data)]])
             elif(pulseNum == 2 + self.dataNibblesCount):
                 # CRC
-                data = decodeNibble(pulseTicks)
+                data, rawdata = decodeNibble(pulseTicks)
                 export.append({
                     'type' : 'crc',
                     'samples' : {
@@ -275,7 +277,8 @@ class Decoder(srd.Decoder):
                         'rise' : rise,
                         'end' : end
                     },
-                    'data' : data
+                    'data' : data,
+                    'raw' : rawdata
                 })
                 self.put(fall, end, self.out_ann, [4, ['CRC: ' + str(data), str(data)]])
 
