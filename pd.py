@@ -39,7 +39,7 @@ class Decoder(srd.Decoder):
         ('debug-generic', 'Generic debug message'),
     )
     annotation_rows = (
-        ('data', 'Data', (2,3,4)),
+        ('datarow', 'Data', (2,3,4)),
         ('pulse', 'Pulses', (1,5,6)),
         ('warnings', 'Warnings', (0,)),
         ('packets', 'Packets', (7,8)),
