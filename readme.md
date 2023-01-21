@@ -18,7 +18,6 @@ The decoder implement several CRC calculation methods:
 
 ### TODO
 
-* Python object exports to enable stacking of higher level protocol analyzers on top of this thing
 * Actually decode SPC pulses, right now the decoder just skips over it
 * SENT pause pulse handling (don't have the traces/devices that does this to test yet)
 * A more robust method of separating SENT frames rather than just time interval...
